@@ -59,31 +59,6 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    setError('');
-    const API_BASE = import.meta.env.VITE_API_URL || '';
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ national_id: '1000000000', password: '123456' })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      localStorage.setItem('nafes_token', data.token);
-      localStorage.setItem('nafes_user', JSON.stringify(data.user));
-      onLoginSuccess(data.user);
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
       <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-stone-200 animate-in fade-in zoom-in duration-200">
@@ -214,19 +189,6 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               )}
             </button>
           </form>
-
-          {/* Quick Demo Login Shortcut */}
-          <div className="pt-3 border-t border-stone-200">
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={loading}
-              className="w-full py-2.5 bg-[#DF9B27]/15 hover:bg-[#DF9B27]/25 text-[#0b5d43] font-bold rounded-xl border border-[#DF9B27]/40 transition-all text-xs flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-[#DF9B27]" />
-              <span>دخول سريع تجريبي (طالب افتراضي)</span>
-            </button>
-          </div>
 
         </div>
 
