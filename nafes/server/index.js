@@ -77,14 +77,14 @@ app.post('/api/auth/register', async (req, res) => {
       password_hash: hash
     });
 
-    const token = jwt.sign({ id: newUser._id, national_id: cleanNationalId, name: newUser.name }, JWT_SECRET, {
+    const token = jwt.sign({ id: newUser._id, national_id: cleanNationalId, name: newUser.name, role: newUser.role || 'student' }, JWT_SECRET, {
       expiresIn: '7d'
     });
 
     res.status(201).json({
       message: 'تم إنشاء الحساب بنجاح في MongoDB',
       token,
-      user: { id: newUser._id, national_id: cleanNationalId, name: newUser.name }
+      user: { id: newUser._id, national_id: cleanNationalId, name: newUser.name, role: newUser.role || 'student' }
     });
   } catch (err) {
     console.error('Registration Error:', err);
@@ -113,14 +113,15 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'رقم الهوية أو كلمة المرور غير صحيحة' });
     }
 
-    const token = jwt.sign({ id: user._id, national_id: user.national_id, name: user.name }, JWT_SECRET, {
+    const role = user.role || 'student';
+    const token = jwt.sign({ id: user._id, national_id: user.national_id, name: user.name, role }, JWT_SECRET, {
       expiresIn: '7d'
     });
 
     res.json({
       message: 'تم تسجيل الدخول بنجاح',
       token,
-      user: { id: user._id, national_id: user.national_id, name: user.name }
+      user: { id: user._id, national_id: user.national_id, name: user.name, role }
     });
   } catch (err) {
     console.error('Login Error:', err);
@@ -342,6 +343,92 @@ app.get('/api/stats', authenticate, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'خطأ في جلب إحصائيات الطالب' });
+  }
+});
+
+// ======================= ADMIN ROUTES =======================
+
+const authenticateAdmin = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'لم يتم توفير رمز المصادقة' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'admin') {
+      const dbUser = await User.findById(decoded.id);
+      if (!dbUser || dbUser.role !== 'admin') {
+        return res.status(403).json({ error: 'غير مصرح! هذه الصفحة مخصصة للمشرفين والفرع الإداري فقط' });
+      }
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'جلسة التصفح انتهت، يرجى تسجيل الدخول مجدداً' });
+  }
+};
+
+app.get('/api/admin/students-stats', authenticateAdmin, async (req, res) => {
+  try {
+    const students = await User.find({ role: { $ne: 'admin' } }).select('-password_hash').lean();
+    const allAttempts = await UserAttempt.find().sort({ completed_at: -1 }).lean();
+
+    let totalSystemSolved = 0;
+    let totalSystemCorrect = 0;
+
+    const studentStatsList = students.map(student => {
+      const studentAttempts = allAttempts.filter(a => String(a.user_id) === String(student._id));
+      const attemptsCount = studentAttempts.length;
+      const totalSolved = studentAttempts.reduce((sum, a) => sum + (a.total_questions || 0), 0);
+      const totalCorrect = studentAttempts.reduce((sum, a) => sum + (a.correct_count || 0), 0);
+      const totalIncorrect = studentAttempts.reduce((sum, a) => sum + (a.incorrect_count || 0), 0);
+      const avgMastery = attemptsCount > 0 
+        ? Math.round(studentAttempts.reduce((sum, a) => sum + (a.mastery_rate || 0), 0) / attemptsCount)
+        : 0;
+      const lastActive = attemptsCount > 0 ? studentAttempts[0].completed_at : student.created_at;
+
+      totalSystemSolved += totalSolved;
+      totalSystemCorrect += totalCorrect;
+
+      return {
+        student_id: student._id,
+        national_id: student.national_id,
+        name: student.name,
+        registered_at: student.created_at,
+        attempts_count: attemptsCount,
+        total_solved: totalSolved,
+        total_correct: totalCorrect,
+        total_incorrect: totalIncorrect,
+        avg_mastery: avgMastery,
+        last_active: lastActive,
+        attempts: studentAttempts.map(att => ({
+          id: att._id,
+          total_questions: att.total_questions,
+          correct_count: att.correct_count,
+          incorrect_count: att.incorrect_count,
+          mastery_rate: att.mastery_rate,
+          duration_seconds: att.duration_seconds,
+          completed_at: att.completed_at
+        }))
+      };
+    });
+
+    const systemAvgMastery = totalSystemSolved > 0 
+      ? Math.round((totalSystemCorrect / totalSystemSolved) * 100) 
+      : 0;
+
+    res.json({
+      overview: {
+        total_students: students.length,
+        total_system_solved: totalSystemSolved,
+        system_avg_mastery: systemAvgMastery
+      },
+      students: studentStatsList
+    });
+  } catch (err) {
+    console.error('Admin Stats Error:', err);
+    res.status(500).json({ error: 'خطأ في جلب بيانات لوحة التحكم للمشرف' });
   }
 });
 

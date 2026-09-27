@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, IdCard, CheckCircle2, AlertCircle, Sparkles, X } from 'lucide-react';
+import { User, Lock, IdCard, CheckCircle2, AlertCircle, Sparkles, X, ShieldCheck } from 'lucide-react';
 
 export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -215,8 +215,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
             </button>
           </form>
 
-          {/* Quick Demo Login Shortcut */}
-          <div className="pt-3 border-t border-stone-200">
+          {/* Quick Demo Login Shortcuts */}
+          <div className="pt-3 border-t border-stone-200 space-y-2">
             <button
               type="button"
               onClick={handleDemoLogin}
@@ -225,6 +225,38 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
             >
               <Sparkles className="w-4 h-4 text-[#DF9B27]" />
               <span>دخول سريع تجريبي (طالب افتراضي)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setLoading(true);
+                setError('');
+                const API_BASE = import.meta.env.VITE_API_URL || '';
+                try {
+                  const res = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ national_id: '9999999999', password: 'admin123' })
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error);
+
+                  localStorage.setItem('nafes_token', data.token);
+                  localStorage.setItem('nafes_user', JSON.stringify(data.user));
+                  onLoginSuccess(data.user);
+                  onClose();
+                } catch (err) {
+                  setError(err.message);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition-all text-xs flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4 text-amber-400" />
+              <span>دخول سريع كـ (مشرف للنظام - أدمن)</span>
             </button>
           </div>
 

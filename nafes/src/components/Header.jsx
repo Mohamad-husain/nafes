@@ -37,7 +37,14 @@ export default function Header({ user, onLogout, onOpenAuth, onGoHome }) {
               <div className="hidden md:flex items-center gap-2 bg-[#074632] px-3 py-1.5 rounded-lg text-xs text-stone-100 border border-emerald-600/40">
                 <User className="w-4 h-4 text-[#DF9B27]" />
                 <div>
-                  <div className="font-bold">{user.name}</div>
+                  <div className="font-bold flex items-center gap-1.5">
+                    {user.name}
+                    {user.role === 'admin' && (
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                        مشرف 👑
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[10px] text-emerald-200">الهوية: {user.national_id}</div>
                 </div>
               </div>

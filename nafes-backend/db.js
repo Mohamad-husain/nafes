@@ -9,8 +9,10 @@ const userSchema = new mongoose.Schema({
   national_id: { type: String, unique: true, required: true },
   name: { type: String, required: true },
   password_hash: { type: String, required: true },
+  role: { type: String, enum: ['student', 'admin'], default: 'student' },
   created_at: { type: Date, default: Date.now }
 });
+
 
 const topicSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -80,10 +82,26 @@ export async function connectAndInitDb() {
       await User.create({
         national_id: '1000000000',
         name: 'طالب تجريبي - نافس',
-        password_hash: hash
+        password_hash: hash,
+        role: 'student'
       });
       console.log('✅ Created demo student account in MongoDB: 1000000000 / Pass 123456');
     }
+
+    // Seed Demo Admin User
+    const existingAdmin = await User.findOne({ national_id: '9999999999' });
+    if (!existingAdmin) {
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash('admin123', salt);
+      await User.create({
+        national_id: '9999999999',
+        name: 'المشرف العام - أدمن نافس',
+        password_hash: hash,
+        role: 'admin'
+      });
+      console.log('✅ Created demo admin account in MongoDB: 9999999999 / Pass admin123');
+    }
+
 
     // Check count and seed if questions list needs refresh or expansion
     const qCount = await Question.countDocuments();

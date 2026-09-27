@@ -5,6 +5,7 @@ import ScienceCardView from './components/ScienceCardView';
 import IndicatorSelector from './components/IndicatorSelector';
 import PracticeView from './components/PracticeView';
 import ResultsView from './components/ResultsView';
+import AdminDashboard from './components/AdminDashboard';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -225,6 +226,12 @@ export default function App() {
             <div className="w-12 h-12 border-4 border-[#0b5d43] border-t-transparent rounded-full animate-spin"></div>
             <p className="text-sm font-bold text-stone-600">جاري تحميل مادة العلوم لاختبارات نافس...</p>
           </div>
+        ) : user?.role === 'admin' ? (
+          <AdminDashboard
+            token={localStorage.getItem('nafes_token')}
+            onLogout={handleLogout}
+            API_URL={API_BASE}
+          />
         ) : (
           <>
             {view === 'card' && (
