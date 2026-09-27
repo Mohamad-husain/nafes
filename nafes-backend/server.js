@@ -255,12 +255,14 @@ app.post('/api/attempts/save', authenticate, async (req, res) => {
   try {
     const { total_questions, correct_count, incorrect_count, mastery_rate, duration_seconds, indicator_ids } = req.body;
 
+    const actualAnsweredCount = (correct_count || 0) + (incorrect_count || 0);
+
     const attempt = await UserAttempt.create({
       user_id: req.user.id,
-      total_questions,
-      correct_count,
-      incorrect_count,
-      mastery_rate,
+      total_questions: actualAnsweredCount, // Save strictly the number of actually answered questions!
+      correct_count: correct_count || 0,
+      incorrect_count: incorrect_count || 0,
+      mastery_rate: mastery_rate || 0,
       duration_seconds: duration_seconds || 0
     });
 
@@ -324,9 +326,9 @@ app.get('/api/stats', authenticate, async (req, res) => {
     const favCount = await UserFavorite.countDocuments({ user_id: req.user.id });
 
     const totalAttempts = attempts.length;
-    const totalSolved = attempts.reduce((acc, a) => acc + a.total_questions, 0);
-    const totalCorrect = attempts.reduce((acc, a) => acc + a.correct_count, 0);
-    const totalIncorrect = attempts.reduce((acc, a) => acc + a.incorrect_count, 0);
+    const totalSolved = attempts.reduce((acc, a) => acc + ((a.correct_count || 0) + (a.incorrect_count || 0)), 0);
+    const totalCorrect = attempts.reduce((acc, a) => acc + (a.correct_count || 0), 0);
+    const totalIncorrect = attempts.reduce((acc, a) => acc + (a.incorrect_count || 0), 0);
     const avgMastery = totalAttempts > 0 
       ? Math.round(attempts.reduce((acc, a) => acc + a.mastery_rate, 0) / totalAttempts)
       : 0;
@@ -380,7 +382,7 @@ app.get('/api/admin/students-stats', authenticateAdmin, async (req, res) => {
     const studentStatsList = students.map(student => {
       const studentAttempts = allAttempts.filter(a => String(a.user_id) === String(student._id));
       const attemptsCount = studentAttempts.length;
-      const totalSolved = studentAttempts.reduce((sum, a) => sum + (a.total_questions || 0), 0);
+      const totalSolved = studentAttempts.reduce((sum, a) => sum + ((a.correct_count || 0) + (a.incorrect_count || 0)), 0);
       const totalCorrect = studentAttempts.reduce((sum, a) => sum + (a.correct_count || 0), 0);
       const totalIncorrect = studentAttempts.reduce((sum, a) => sum + (a.incorrect_count || 0), 0);
       const avgMastery = attemptsCount > 0 
@@ -404,9 +406,9 @@ app.get('/api/admin/students-stats', authenticateAdmin, async (req, res) => {
         last_active: lastActive,
         attempts: studentAttempts.map(att => ({
           id: att._id,
-          total_questions: att.total_questions,
-          correct_count: att.correct_count,
-          incorrect_count: att.incorrect_count,
+          total_questions: (att.correct_count || 0) + (att.incorrect_count || 0),
+          correct_count: att.correct_count || 0,
+          incorrect_count: att.incorrect_count || 0,
           mastery_rate: att.mastery_rate,
           duration_seconds: att.duration_seconds,
           completed_at: att.completed_at

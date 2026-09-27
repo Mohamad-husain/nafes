@@ -114,6 +114,16 @@ export async function connectAndInitDb() {
       await updateCounts();
     }
 
+    // Fix existing attempts in MongoDB where total_questions was recorded as batch size instead of answered count
+    const existingAttempts = await UserAttempt.find({});
+    for (const att of existingAttempts) {
+      const actualSolved = (att.correct_count || 0) + (att.incorrect_count || 0);
+      if (att.total_questions !== actualSolved) {
+        att.total_questions = actualSolved;
+        await att.save();
+      }
+    }
+
     console.log('✨ MongoDB Database initialized & seeded cleanly.');
   } catch (err) {
     console.error('❌ MongoDB Initialization error:', err);

@@ -17,9 +17,9 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
       });
     } catch (e) {}
 
-    // Save attempt to server if user is logged in
+    // Save attempt to server if user is logged in and actually answered at least 1 question
     const token = localStorage.getItem('nafes_token');
-    if (token) {
+    if (token && answeredCount > 0) {
       // Find indicator IDs for questions actually answered
       const answeredQIds = Object.keys(answers || {}).map((id) => String(id));
       const solvedIndIds = questions
@@ -34,8 +34,7 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-
-          total_questions: totalQuestions,
+          total_questions: answeredCount, // ONLY count questions actually answered by student!
           correct_count: correctCount,
           incorrect_count: incorrectCount,
           mastery_rate: masteryRate,
