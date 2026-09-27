@@ -31,8 +31,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
       return;
     }
 
-    setLoading(true);
-    const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
+    const API_BASE = import.meta.env.VITE_API_URL || '';
+    const endpoint = isRegister ? `${API_BASE}/api/auth/register` : `${API_BASE}/api/auth/login`;
     const payload = isRegister ? { national_id: nationalId, name, password } : { national_id: nationalId, password };
 
     try {
@@ -62,8 +62,10 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   const handleDemoLogin = async () => {
     setLoading(true);
     setError('');
+    const API_BASE = import.meta.env.VITE_API_URL || '';
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ national_id: '1000000000', password: '123456' })

@@ -6,6 +6,8 @@ import IndicatorSelector from './components/IndicatorSelector';
 import PracticeView from './components/PracticeView';
 import ResultsView from './components/ResultsView';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -47,7 +49,7 @@ export default function App() {
   const fetchStructure = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/science/structure');
+      const res = await fetch(`${API_BASE}/api/science/structure`);
       const data = await res.json();
       setStructure(data);
     } catch (err) {
@@ -59,7 +61,7 @@ export default function App() {
 
   const fetchFavorites = async (token) => {
     try {
-      const res = await fetch('/api/favorites', {
+      const res = await fetch(`${API_BASE}/api/favorites`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -71,7 +73,7 @@ export default function App() {
 
   const fetchSolvedIndicators = async (token) => {
     try {
-      const res = await fetch('/api/indicators/solved', {
+      const res = await fetch(`${API_BASE}/api/indicators/solved`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -95,7 +97,7 @@ export default function App() {
 
     const token = localStorage.getItem('nafes_token');
     if (token) {
-      fetch('/api/indicators/solved', {
+      fetch(`${API_BASE}/api/indicators/solved`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -111,7 +113,7 @@ export default function App() {
     localStorage.removeItem('nafes_solved_indicators');
     const token = localStorage.getItem('nafes_token');
     if (token) {
-      fetch('/api/indicators/solved', {
+      fetch(`${API_BASE}/api/indicators/solved`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       }).catch(() => {});
@@ -138,7 +140,7 @@ export default function App() {
   const handleStartTraining = async (selectedIndicatorIds) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/science/questions', {
+      const res = await fetch(`${API_BASE}/api/science/questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ indicator_ids: selectedIndicatorIds })
@@ -167,7 +169,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('/api/favorites/toggle', {
+      const res = await fetch(`${API_BASE}/api/favorites/toggle`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

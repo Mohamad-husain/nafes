@@ -26,13 +26,15 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
         .filter((q) => answeredQIds.includes(String(q.id)) || answeredQIds.includes(String(q._id)))
         .map((q) => q.indicator_id);
 
-      fetch('/api/attempts/save', {
+      const API_BASE = import.meta.env.VITE_API_URL || '';
+      fetch(`${API_BASE}/api/attempts/save`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
+
           total_questions: totalQuestions,
           correct_count: correctCount,
           incorrect_count: incorrectCount,
