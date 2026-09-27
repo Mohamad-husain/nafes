@@ -49,7 +49,13 @@ export default function ScienceCardView({ totals, user, onSelectScience, onOpenA
       {/* Science Card (Centrally Displayed) */}
       <div className="max-w-xl mx-auto">
         <div 
-          onClick={onSelectScience}
+          onClick={() => {
+            if (!user) {
+              onOpenAuth();
+            } else {
+              onSelectScience();
+            }
+          }}
           className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-[#0b5d43] shadow-xl hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between group transform hover:-translate-y-1"
         >
           <div className="absolute top-0 left-0 bg-[#DF9B27] text-[#0b5d43] px-3.5 py-1 text-[11px] font-black rounded-br-2xl flex items-center gap-1 shadow">

@@ -139,6 +139,11 @@ export default function App() {
 
   // Start training with selected indicator IDs
   const handleStartTraining = async (selectedIndicatorIds) => {
+    if (!user) {
+      setIsAuthOpen(true);
+      return;
+    }
+
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/api/science/questions`, {
