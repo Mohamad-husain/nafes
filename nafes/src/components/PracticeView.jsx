@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Star, CheckCircle2, XCircle, ArrowLeft, ArrowRight, Flag, Award, Sparkles, Check, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-export default function PracticeView({ questions, user, onEndTraining, onToggleFavorite, favoriteIds = [] }) {
+export default function PracticeView({ questions, user, onEndTraining, onAnswer, onToggleFavorite, favoriteIds = [] }) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [answers, setAnswers] = useState({}); // { [questionId]: { selected: 'a', isCorrect: true } }
   const [userFavorites, setUserFavorites] = useState(new Set(favoriteIds));
 
@@ -35,12 +38,24 @@ export default function PracticeView({ questions, user, onEndTraining, onToggleF
   const correctCount = Object.values(answers).filter((a) => a.isCorrect).length;
   const incorrectCount = Object.values(answers).filter((a) => !a.isCorrect).length;
   const masteryRate = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0;
-  const progressPercent = Math.round(((currentIndex + 1) / totalQuestions) * 100);
+  const progressPercent = Math.round((answeredCount / totalQuestions) * 100);
 
   // Handle Option Click
-  const handleSelectOption = (optionKey) => {
-    if (isAnswered) return; // Prevent changing answer once selected
+  const handleSelectOption = async (optionKey) => {
+    if (isAnswered || savingRef.current) return; // Prevent changing answer once selected
 
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onAnswer(currentQ.id);
+    } catch (error) {
+      setSaveError(error.message || 'تعذر حفظ الإجابة. حاول مرة أخرى.');
+      return;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
     const isCorrect = optionKey.toLowerCase() === currentQ.correct_option.toLowerCase();
     
     setAnswers((prev) => ({
@@ -75,6 +90,7 @@ export default function PracticeView({ questions, user, onEndTraining, onToggleF
   };
 
   const handleNext = () => {
+    if (savingRef.current) return;
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
@@ -84,12 +100,14 @@ export default function PracticeView({ questions, user, onEndTraining, onToggleF
   };
 
   const handlePrev = () => {
+    if (savingRef.current) return;
     if (currentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
     }
   };
 
   const onFinish = () => {
+    if (savingRef.current) return;
     onEndTraining({
       totalQuestions,
       answeredCount,
@@ -191,6 +209,8 @@ export default function PracticeView({ questions, user, onEndTraining, onToggleF
           </h3>
         </div>
 
+        {saving && <p role="status" className="text-sm text-stone-500">جاري حفظ الإجابة...</p>}
+        {saveError && <p role="alert" className="text-sm text-red-700">{saveError}</p>}
         {/* Options List (A, B, C, D) */}
         <div className="space-y-3 pt-2">
           {optionLetters.map((opt) => {

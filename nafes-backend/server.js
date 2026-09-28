@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
@@ -11,7 +12,8 @@ import {
   Question, 
   UserFavorite, 
   UserAttempt, 
-  UserSolvedIndicator 
+  UserSolvedIndicator,
+  UserSolvedQuestion
 } from './db.js';
 
 dotenv.config();
@@ -147,15 +149,32 @@ app.get('/api/science/structure', async (req, res) => {
   try {
     const topics = await Topic.find().lean();
     const indicators = await Indicator.find().lean();
+    const questions = await Question.find({}, '_id indicator_id').lean();
     const totalQuestions = await Question.countDocuments();
+
+    const indQuestionsMap = {};
+    for (const q of questions) {
+      const indId = String(q.indicator_id);
+      if (!indQuestionsMap[indId]) indQuestionsMap[indId] = [];
+      indQuestionsMap[indId].push(String(q._id));
+    }
 
     const tree = topics.map(topic => {
       const topicInds = indicators
         .filter(ind => String(ind.topic_id) === String(topic._id))
-        .map(ind => ({ ...ind, id: ind._id }));
+        .map(ind => {
+          const qIds = indQuestionsMap[String(ind._id)] || [];
+          return {
+            ...ind,
+            id: ind._id,
+            question_ids: qIds,
+            question_count: qIds.length
+          };
+        });
       return {
         ...topic,
         id: topic._id,
+        question_count: topicInds.reduce((sum, ind) => sum + ind.question_count, 0),
         indicators: topicInds
       };
     });
@@ -198,10 +217,10 @@ app.post('/api/science/questions', async (req, res) => {
       })
       .lean();
 
-    // Randomize
-    const shuffled = rawQuestions.sort(() => 0.5 - Math.random());
+    // Order deterministically by _id so students resume in sequential order
+    const sortedQuestions = rawQuestions.sort((a, b) => String(a._id).localeCompare(String(b._id)));
 
-    const questions = shuffled.map(q => ({
+    const questions = sortedQuestions.map(q => ({
       ...q,
       id: q._id,
       indicator_id: q.indicator_id?._id || q.indicator_id,
@@ -253,7 +272,7 @@ app.get('/api/favorites', authenticate, async (req, res) => {
 
 app.post('/api/attempts/save', authenticate, async (req, res) => {
   try {
-    const { total_questions, correct_count, incorrect_count, mastery_rate, duration_seconds, indicator_ids } = req.body;
+    const { correct_count, incorrect_count, mastery_rate, duration_seconds } = req.body;
 
     const actualAnsweredCount = (correct_count || 0) + (incorrect_count || 0);
 
@@ -266,16 +285,6 @@ app.post('/api/attempts/save', authenticate, async (req, res) => {
       duration_seconds: duration_seconds || 0
     });
 
-    if (indicator_ids && Array.isArray(indicator_ids)) {
-      for (const indId of indicator_ids) {
-        await UserSolvedIndicator.updateOne(
-          { user_id: req.user.id, indicator_id: indId },
-          { user_id: req.user.id, indicator_id: indId },
-          { upsert: true }
-        );
-      }
-    }
-
     res.json({ message: 'تم حفظ نتائج التدريب بنجاح في MongoDB', attemptId: attempt._id });
   } catch (err) {
     console.error('Save Attempt Error:', err);
@@ -285,34 +294,57 @@ app.post('/api/attempts/save', authenticate, async (req, res) => {
 
 app.get('/api/indicators/solved', authenticate, async (req, res) => {
   try {
-    const rows = await UserSolvedIndicator.find({ user_id: req.user.id });
-    res.json({ solvedIndicatorIds: rows.map(r => r.indicator_id) });
+    const solvedQuestionIds = (await UserSolvedQuestion.distinct('question_id', { user_id: req.user.id })).map(String);
+    // Derive completion from question IDs, including legacy saved progress.
+    const questions = await Question.find({}, '_id indicator_id').lean();
+    const byIndicator = new Map();
+    for (const q of questions) {
+      const key = String(q.indicator_id);
+      if (!byIndicator.has(key)) byIndicator.set(key, []);
+      byIndicator.get(key).push(String(q._id));
+    }
+    const answered = new Set(solvedQuestionIds);
+    res.json({
+      solvedQuestionIds,
+      solvedIndicatorIds: [...byIndicator].filter(([, ids]) => ids.every(id => answered.has(id))).map(([id]) => id)
+    });
   } catch (err) {
-    res.status(500).json({ error: 'خطأ في جلب المؤشرات المحلولة' });
+    res.status(500).json({ error: 'خطأ في جلب المؤشرات والأسئلة المحلولة' });
   }
 });
 
 app.post('/api/indicators/solved', authenticate, async (req, res) => {
   try {
-    const { indicator_ids } = req.body;
-    if (indicator_ids && Array.isArray(indicator_ids)) {
-      for (const indId of indicator_ids) {
-        await UserSolvedIndicator.updateOne(
-          { user_id: req.user.id, indicator_id: indId },
-          { user_id: req.user.id, indicator_id: indId },
+    const { question_ids } = req.body;
+    if (!Array.isArray(question_ids) || question_ids.some(id => typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id))) {
+      return res.status(400).json({ error: 'معرفات الأسئلة غير صالحة' });
+    }
+    const ids = [...new Set(question_ids.map(id => id.toLowerCase()))];
+    const questions = await Question.find({ _id: { $in: ids } }, '_id').lean();
+    if (questions.length !== ids.length) return res.status(400).json({ error: 'السؤال غير موجود' });
+    for (const question_id of ids) {
+      // Stable ID prevents duplicate inserts from concurrent tabs; existing rows remain compatible.
+      const recordId = createHash('sha256').update(`${req.user.id}:${question_id}`).digest('hex').slice(0, 24);
+      try {
+        await UserSolvedQuestion.updateOne(
+          { user_id: req.user.id, question_id },
+          { $setOnInsert: { _id: recordId, user_id: req.user.id, question_id } },
           { upsert: true }
         );
+      } catch (error) {
+        if (error.code !== 11000) throw error;
       }
     }
-    res.json({ message: 'تم حفظ حالة الأفكار والمؤشرات المحلولة في MongoDB' });
+    res.json({ message: 'تم حفظ حالة الأسئلة والمؤشرات المحلولة في MongoDB' });
   } catch (err) {
-    res.status(500).json({ error: 'خطأ في حفظ المؤشرات' });
+    res.status(500).json({ error: 'خطأ في حفظ البيانات' });
   }
 });
 
 app.delete('/api/indicators/solved', authenticate, async (req, res) => {
   try {
     await UserSolvedIndicator.deleteMany({ user_id: req.user.id });
+    await UserSolvedQuestion.deleteMany({ user_id: req.user.id });
     res.json({ message: 'تم إعادة ضبط شارات تم حلها بنجاح' });
   } catch (err) {
     res.status(500).json({ error: 'خطأ في إعادة الضبط' });

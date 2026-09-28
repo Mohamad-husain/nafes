@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Trophy, CheckCircle, XCircle, RotateCcw, Home, Sparkles, Star, Award, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-export default function ResultsView({ results, questions, user, onRestart, onGoHome }) {
+export default function ResultsView({ results, questions, user, onRestart, canContinue, onGoHome }) {
   const { totalQuestions, correctCount, incorrectCount, masteryRate, answers } = results;
   const answeredCount = results.answeredCount !== undefined ? results.answeredCount : Object.keys(answers || {}).length;
   const unansweredCount = totalQuestions - answeredCount;
@@ -20,12 +20,6 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
     // Save attempt to server if user is logged in and actually answered at least 1 question
     const token = localStorage.getItem('nafes_token');
     if (token && answeredCount > 0) {
-      // Find indicator IDs for questions actually answered
-      const answeredQIds = Object.keys(answers || {}).map((id) => String(id));
-      const solvedIndIds = questions
-        .filter((q) => answeredQIds.includes(String(q.id)) || answeredQIds.includes(String(q._id)))
-        .map((q) => q.indicator_id);
-
       const API_BASE = import.meta.env.VITE_API_URL || '';
       fetch(`${API_BASE}/api/attempts/save`, {
         method: 'POST',
@@ -37,8 +31,7 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
           total_questions: answeredCount, // ONLY count questions actually answered by student!
           correct_count: correctCount,
           incorrect_count: incorrectCount,
-          mastery_rate: masteryRate,
-          indicator_ids: solvedIndIds
+          mastery_rate: masteryRate
         })
       }).catch(err => console.error('Failed to save attempt:', err));
     }
@@ -111,10 +104,11 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
       <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
         <button
           onClick={onRestart}
-          className="w-full sm:w-auto px-6 py-3 bg-[#0b5d43] hover:bg-[#074632] text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all"
+          disabled={!canContinue}
+          className="w-full sm:w-auto px-6 py-3 bg-[#0b5d43] hover:bg-[#074632] text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RotateCcw className="w-4 h-4" />
-          <span>إعادة التدريب بنفس الأسئلة</span>
+          <span>{canContinue ? 'إكمال الحل' : 'اكتمل الحل'}</span>
         </button>
 
         <button
@@ -132,9 +126,7 @@ export default function ResultsView({ results, questions, user, onRestart, onGoH
           <h3 className="text-xl font-black text-stone-800">
             مراجعة تفصيلية للأسئلة والإجابات
           </h3>
-          <span className="text-xs font-bold text-stone-500 bg-stone-100 px-3 py-1 rounded-full">
-            تم حل {answeredCount} من أصل {totalQuestions} سؤالاً
-          </span>
+
         </div>
 
         <div className="space-y-4 divide-y divide-stone-100">

@@ -1,3 +1,4 @@
+import { remainingQuestions } from './progress';
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import AuthModal from './components/AuthModal';
@@ -21,15 +22,10 @@ export default function App() {
   const [activeResults, setActiveResults] = useState(null);
   const [favoriteIds, setFavoriteIds] = useState([]);
 
-  // Solved indicators tracking state
-  const [solvedIndicatorIds, setSolvedIndicatorIds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('nafes_solved_indicators');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // Progress is loaded from the authenticated account, never shared local storage.
+  const [solvedQuestionIds, setSolvedQuestionIds] = useState([]);
+  const [activeIndicatorIds, setActiveIndicatorIds] = useState([]);
+  const [progressError, setProgressError] = useState('');
 
   // Check saved user session and fetch Science topics structure
   useEffect(() => {
@@ -40,7 +36,7 @@ export default function App() {
       try {
         setUser(JSON.parse(savedUser));
         fetchFavorites(token);
-        fetchSolvedIndicators(token);
+        fetchSolvedData(token);
       } catch (e) {}
     }
 
@@ -72,61 +68,46 @@ export default function App() {
     } catch (e) {}
   };
 
-  const fetchSolvedIndicators = async (token) => {
+  const fetchSolvedData = async (token) => {
     try {
       const res = await fetch(`${API_BASE}/api/indicators/solved`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error('تعذر تحميل التقدم المحفوظ. حاول مرة أخرى.');
       const data = await res.json();
-      if (data.solvedIndicatorIds) {
-        setSolvedIndicatorIds((prev) => {
-          const merged = Array.from(new Set([...prev, ...data.solvedIndicatorIds]));
-          localStorage.setItem('nafes_solved_indicators', JSON.stringify(merged));
-          return merged;
-        });
+      const ids = [...new Set((data.solvedQuestionIds || []).map(String))];
+      if (localStorage.getItem('nafes_token') === token) {
+        setSolvedQuestionIds(ids);
+        setProgressError('');
       }
-    } catch (e) {}
-  };
-
-  const markIndicatorsAsSolved = (indicatorIds) => {
-    if (!indicatorIds || indicatorIds.length === 0) return;
-    setSolvedIndicatorIds((prev) => {
-      const updated = Array.from(new Set([...prev, ...indicatorIds]));
-      localStorage.setItem('nafes_solved_indicators', JSON.stringify(updated));
-      return updated;
-    });
-
-    const token = localStorage.getItem('nafes_token');
-    if (token) {
-      fetch(`${API_BASE}/api/indicators/solved`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ indicator_ids: indicatorIds })
-      }).catch(() => {});
+      return ids;
+    } catch (error) {
+      if (localStorage.getItem('nafes_token') === token) setProgressError(error.message);
+      return null;
     }
   };
 
-  const handleResetSolved = () => {
-    setSolvedIndicatorIds([]);
-    localStorage.removeItem('nafes_solved_indicators');
+  const markSolved = async (questionId) => {
     const token = localStorage.getItem('nafes_token');
-    if (token) {
-      fetch(`${API_BASE}/api/indicators/solved`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(() => {});
+    const res = await fetch(`${API_BASE}/api/indicators/solved`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ question_ids: [questionId] }),
+      keepalive: true
+    });
+    if (!res.ok) throw new Error('تعذر حفظ الإجابة. أعد المحاولة قبل المتابعة.');
+    if (localStorage.getItem('nafes_token') === token) {
+      setSolvedQuestionIds(prev => [...new Set([...prev, String(questionId)])]);
     }
   };
 
   const handleLoginSuccess = (userObj) => {
+    setSolvedQuestionIds([]);
     setUser(userObj);
     const token = localStorage.getItem('nafes_token');
     if (token) {
       fetchFavorites(token);
-      fetchSolvedIndicators(token);
+      fetchSolvedData(token);
     }
   };
 
@@ -134,10 +115,15 @@ export default function App() {
     localStorage.removeItem('nafes_token');
     localStorage.removeItem('nafes_user');
     setUser(null);
+    setSolvedQuestionIds([]);
+    setActiveQuestions([]);
+    setActiveResults(null);
+    setView('card');
+    setProgressError('');
     setFavoriteIds([]);
   };
 
-  // Start training with selected indicator IDs
+  // Start training with selected indicator IDs (Resuming progress on unsolved questions)
   const handleStartTraining = async (selectedIndicatorIds) => {
     if (!user) {
       setIsAuthOpen(true);
@@ -146,15 +132,30 @@ export default function App() {
 
     try {
       setLoading(true);
+      const token = localStorage.getItem('nafes_token');
+      const answeredIds = await fetchSolvedData(token);
+      if (answeredIds === null || localStorage.getItem('nafes_token') !== token) return;
       const res = await fetch(`${API_BASE}/api/science/questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ indicator_ids: selectedIndicatorIds })
       });
+      if (!res.ok) throw new Error('Failed to load questions');
       const data = await res.json();
+      if (localStorage.getItem('nafes_token') !== token) return;
 
       if (data.questions && data.questions.length > 0) {
-        setActiveQuestions(data.questions);
+        const allFetched = data.questions;
+        // Filter out questions already solved to resume progress
+        const unsolved = remainingQuestions(allFetched, answeredIds);
+        if (unsolved.length === 0) {
+          setView('indicators');
+          return;
+        }
+        setActiveIndicatorIds(selectedIndicatorIds);
+        const targetQuestions = unsolved;
+
+        setActiveQuestions(targetQuestions);
         setView('practice');
       } else {
         alert('لم يتم إيجاد أسئلة للمؤشرات المحددة');
@@ -196,15 +197,6 @@ export default function App() {
   const handleEndTraining = (results) => {
     if (results) {
       setActiveResults(results);
-      // ONLY mark indicators as solved for questions ACTUALLY answered by student!
-      const answeredQIds = Object.keys(results.answers || {}).map((id) => String(id));
-      const actuallyAnsweredIndicatorIds = activeQuestions
-        .filter((q) => answeredQIds.includes(String(q.id)) || answeredQIds.includes(String(q._id)))
-        .map((q) => q.indicator_id);
-
-      if (actuallyAnsweredIndicatorIds.length > 0) {
-        markIndicatorsAsSolved(actuallyAnsweredIndicatorIds);
-      }
 
       setView('results');
     } else {
@@ -226,6 +218,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
+        {progressError && <p role="alert" className="mb-4 text-red-700">{progressError}</p>}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4">
             <div className="w-12 h-12 border-4 border-[#0b5d43] border-t-transparent rounded-full animate-spin"></div>
@@ -251,10 +244,9 @@ export default function App() {
             {view === 'indicators' && (
               <IndicatorSelector
                 structure={structure}
-                solvedIndicatorIds={solvedIndicatorIds}
+                solvedQuestionIds={solvedQuestionIds}
                 onStartTraining={handleStartTraining}
                 onGoBack={() => setView('card')}
-                onResetSolved={handleResetSolved}
               />
             )}
 
@@ -265,6 +257,7 @@ export default function App() {
                 favoriteIds={favoriteIds}
                 onToggleFavorite={handleToggleFavorite}
                 onEndTraining={handleEndTraining}
+                onAnswer={markSolved}
               />
             )}
 
@@ -273,7 +266,8 @@ export default function App() {
                 results={activeResults}
                 questions={activeQuestions}
                 user={user}
-                onRestart={() => setView('practice')}
+                onRestart={() => handleStartTraining(activeIndicatorIds)}
+                canContinue={activeQuestions.some(q => !solvedQuestionIds.includes(String(q.id)))}
                 onGoHome={() => setView('indicators')}
               />
             )}

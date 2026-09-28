@@ -1,7 +1,8 @@
+import { weekProgress } from '../progress';
 import React, { useState, useMemo } from 'react';
 import { Search, CheckSquare, Square, ChevronDown, ChevronLeft, Play, RefreshCw, Filter, Sparkles, CheckCircle2, RotateCcw } from 'lucide-react';
 
-export default function IndicatorSelector({ structure, solvedIndicatorIds = [], onStartTraining, onGoBack, onResetSolved }) {
+export default function IndicatorSelector({ structure, solvedQuestionIds = [], onStartTraining, onGoBack }) {
   const [selectedIndicators, setSelectedIndicators] = useState([]);
   const [expandedTopics, setExpandedTopics] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,12 +80,12 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
     structure?.topics?.forEach((t) => {
       t.indicators.forEach((i) => {
         if (selectedIndicators.includes(i.id)) {
-          count += i.question_count || 1;
+          count += (i.question_ids || []).filter(id => !solvedQuestionIds.includes(String(id))).length;
         }
       });
     });
     return count;
-  }, [structure, selectedIndicators]);
+  }, [structure, selectedIndicators, solvedQuestionIds]);
 
   const handleStart = () => {
     if (selectedIndicators.length === 0) {
@@ -125,9 +126,9 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               onClick={handleStart}
-              disabled={selectedIndicators.length === 0}
+              disabled={selectedQuestionsCount === 0}
               className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg transition-all ${
-                selectedIndicators.length > 0
+                selectedQuestionsCount > 0
                   ? 'bg-[#0b5d43] hover:bg-[#074632] text-white'
                   : 'bg-stone-200 text-stone-400 cursor-not-allowed'
               }`}
@@ -149,17 +150,6 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
             >
               <span>✓ اختيار الكل</span>
             </button>
-
-            {solvedIndicatorIds.length > 0 && (
-              <button
-                onClick={onResetSolved}
-                className="px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs flex items-center gap-1 transition-all"
-                title="إعادة ضبط وإلغاء جميع شارات تم حلها"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                <span>تصفير "تم حلها"</span>
-              </button>
-            )}
           </div>
 
           {/* Search Input */}
@@ -183,7 +173,11 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
           const isExpanded = !!expandedTopics[topic.id];
           const topicIndIds = topic.indicators.map((i) => i.id);
           const selectedCountInTopic = topicIndIds.filter((id) => selectedIndicators.includes(id)).length;
-          const solvedCountInTopic = topicIndIds.filter((id) => solvedIndicatorIds.includes(id)).length;
+
+          // Use the full week even when search hides some indicators.
+          const fullTopic = structure.topics.find(t => t.id === topic.id);
+          const { answeredCount: topicSolvedQs, totalCount: topicTotalQs, isComplete } = weekProgress(fullTopic, solvedQuestionIds);
+
           const isAllTopicSelected = topicIndIds.length > 0 && selectedCountInTopic === topicIndIds.length;
 
           return (
@@ -193,7 +187,7 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
             >
               {/* Topic Header Bar */}
               <div className="p-4 bg-stone-50/80 border-b border-stone-200/60 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleExpand(topic.id)}>
+                <div className="flex flex-wrap items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleExpand(topic.id)}>
                   <button className="text-stone-500 p-1 hover:text-[#0b5d43]">
                     {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
                   </button>
@@ -203,17 +197,23 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
                   </h3>
 
                   <span className="bg-emerald-800/10 text-[#0b5d43] text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-800/20">
-                    {topic.question_count || topic.indicators.length * 2} سؤال
+                    {topicTotalQs} سؤال
                   </span>
 
-                  {solvedCountInTopic > 0 && (
+                  {(
                     <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{solvedCountInTopic}/{topicIndIds.length} تم حلها</span>
+                      <span>تم حل {topicSolvedQs} من أصل {topicTotalQs} سؤالاً{isComplete ? ' · مكتمل' : ''}</span>
                     </span>
                   )}
                 </div>
 
+                {topicSolvedQs > 0 && !isComplete && (
+                  <button onClick={() => onStartTraining(fullTopic.indicators.map(ind => ind.id))}
+                    className="text-xs font-bold text-[#0b5d43] bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                    إكمال الحل
+                  </button>
+                )}
                 {/* Topic Select All Checkbox */}
                 <button
                   onClick={() => toggleTopicAll(topic)}
@@ -233,7 +233,12 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
                 <div className="p-4 space-y-2 bg-white divide-y divide-stone-100">
                   {topic.indicators.map((ind) => {
                     const isSelected = selectedIndicators.includes(ind.id);
-                    const isSolved = solvedIndicatorIds.includes(ind.id);
+                    const indQIds = (ind.question_ids || []).map(String);
+                    const totalInInd = indQIds.length || ind.question_count || 0;
+                    const solvedInInd = indQIds.filter((id) => solvedQuestionIds.includes(String(id))).length;
+                    const isFullySolved = totalInInd > 0 && solvedInInd === totalInInd;
+                    const isPartiallySolved = !isFullySolved && solvedInInd > 0;
+
                     return (
                       <div
                         key={ind.id}
@@ -241,8 +246,10 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
                         className={`pt-3 first:pt-0 flex items-center justify-between gap-3 p-3 rounded-xl cursor-pointer transition-all ${
                           isSelected
                             ? 'bg-emerald-50/80 border border-emerald-300 shadow-xs'
-                            : isSolved
+                            : isFullySolved
                             ? 'bg-emerald-50/30 hover:bg-emerald-50/50'
+                            : isPartiallySolved
+                            ? 'bg-amber-50/30 hover:bg-amber-50/50'
                             : 'hover:bg-stone-50'
                         }`}
                       >
@@ -258,14 +265,20 @@ export default function IndicatorSelector({ structure, solvedIndicatorIds = [], 
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          {isSolved && (
+                          {isFullySolved && (
                             <span className="bg-emerald-100 text-emerald-800 text-[11px] font-black px-2.5 py-1 rounded-lg border border-emerald-300 flex items-center gap-1 shadow-xs">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 fill-emerald-100" />
-                              <span>تم حلها ✓</span>
+                              <span>تم حلها ✓ ({solvedInInd}/{totalInInd})</span>
+                            </span>
+                          )}
+                          {isPartiallySolved && (
+                            <span className="bg-amber-100 text-amber-800 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-amber-300 flex items-center gap-1 shadow-xs">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                              <span>{solvedInInd}/{totalInInd} تم حلها</span>
                             </span>
                           )}
                           <span className="text-[11px] text-stone-500 bg-stone-100 px-2.5 py-1 rounded-md font-medium">
-                            {ind.question_count || 2} سؤال
+                            {totalInInd} سؤال
                           </span>
                         </div>
                       </div>
